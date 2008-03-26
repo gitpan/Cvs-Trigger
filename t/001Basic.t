@@ -6,7 +6,7 @@
 use warnings;
 use strict;
 
-use Test::More tests => 10;
+use Test::More tests => 11;
 use Log::Log4perl qw(:easy);
 use Cvs::Trigger;
 use Sysadm::Install qw(:all);
@@ -17,6 +17,7 @@ BEGIN { use_ok('Cvs::Trigger') };
 #Log::Log4perl->easy_init({ level => $DEBUG, layout => "%F-%L: %m%n"});
 
 my $c = Cvs::Temp->new();
+$c->init();
 cd $c->{local_root};
 $c->module_import();
 
@@ -25,9 +26,10 @@ my $script = "$c->{bin_dir}/trigger";
 blurt $code, $script;
 chmod 0755, $script;
 
-my $commitinfo = "$c->{cvsroot}/CVSROOT/commitinfo";
+my $commitinfo = "$c->{local_root}/CVSROOT/commitinfo";
 chmod 0644, $commitinfo or die "cannot chmod $commitinfo";
 blurt "DEFAULT $script", $commitinfo;
+$c->admin_rebuild();
 
     # Single file
 $c->files_commit("m/a/a1.txt");
@@ -51,6 +53,13 @@ is($yml->{repo_dir}, "$c->{cvsroot}/m/a", "yml trigger check repo_dir");
 $yml = LoadFile("$c->{out_dir}/trigger.yml.4");
 is($yml->{files}->[0], "b.txt", "yml trigger check for two files (same dir)");
 is($yml->{repo_dir}, "$c->{cvsroot}/m/a/b", "yml trigger check repo_dir");
+
+    # Check-in message containing a quote
+$c->single_file_commit("file_content\n", "m/a/a1.txt", 
+                       "message with a ' quote");
+
+$yml = LoadFile("$c->{out_dir}/trigger.yml.5");
+is($yml->{files}->[0], "a1.txt", "message with a single quote");
 
 cdback;
 

@@ -17,6 +17,7 @@ BEGIN { use_ok('Cvs::Trigger') };
 #Log::Log4perl->easy_init($DEBUG);
 
 my $c = Cvs::Temp->new();
+$c->init();
 $c->module_import();
 
 my $code = $c->test_trigger_code("commitinfo", 1);
@@ -29,13 +30,15 @@ my $vscript = "$c->{bin_dir}/vtrigger";
 blurt $vcode, $vscript;
 chmod 0755, $vscript;
 
-my $commitinfo = "$c->{cvsroot}/CVSROOT/commitinfo";
+my $commitinfo = "$c->{local_root}/CVSROOT/commitinfo";
 chmod 0644, $commitinfo or die "cannot chmod $commitinfo";
 blurt "DEFAULT $script", $commitinfo;
 
-my $verifymsg = "$c->{cvsroot}/CVSROOT/verifymsg";
+my $verifymsg = "$c->{local_root}/CVSROOT/verifymsg";
 chmod 0644, $verifymsg or die "cannot chmod $verifymsg";
 blurt "DEFAULT $vscript", $verifymsg;
+
+$c->admin_rebuild();
 
     # Single file
 $c->files_commit("m/a/a1.txt");

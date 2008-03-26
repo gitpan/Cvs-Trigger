@@ -11,7 +11,7 @@ use Cache::FileCache;
 use Storable qw(freeze thaw);
 use POSIX;
 
-our $VERSION = "0.02";
+our $VERSION = "0.03";
 
 ###########################################
 sub new {
@@ -99,7 +99,7 @@ sub verifymsg {
     DEBUG "Running verifymsg ($$ ", getppid(), ")";
 
     if(@ARGV < 1) {
-        LOGDIE "Argument error: commitinfo expects at least 1 parameter";
+        LOGDIE "Argument error: verifymsg expects at least 1 parameter";
     }
 
     my $tmp_file = $ARGV[-1];
@@ -150,11 +150,11 @@ sub loginfo {
     $opts ||= {};
     my $rev_fmt = ($opts->{rev_fmt} || undef);
 
-    DEBUG "Running loginfo ($$ ", getppid(), ")";
-
     my @opts = @ARGV;
 
     my $data = join '', <STDIN>;
+
+    DEBUG "Running loginfo ($$ ", getppid(), "): argv=[@ARGV] data=[$data]";
 
     my $res = {
         opts    => \@opts,
@@ -346,12 +346,29 @@ sub new {
     $self->{perl_bin} = bin_find("perl") unless 
                         defined $self->{perl_bin};
 
+    my($stdout, $stderr, $rc) = tap $self->{cvs_bin}, "-v";
+    if($rc == 0 and $stdout =~ /(\d+\.\d+)/) {
+        $self->{cvs_version} = $1;
+    } else {
+        LOGDIE "Cannot determine CVS version ($stderr)";
+    }
+
     bless $self, $class;
+
+    return $self;
+}
+
+###########################################
+sub init {
+###########################################
+    my($self) = @_;
 
     $self->cvs_cmd("init");
     DEBUG "New cvs created in $self->{cvsroot}";
 
-    return $self;
+    cd $self->{local_root};
+    $self->cvs_cmd("co", "CVSROOT");
+    cdback;
 }
 
 ###########################################
@@ -366,7 +383,8 @@ use lib '_cwd_/blib/arch';
 use Cvs::Trigger qw(:all);
 use YAML qw(DumpFile);
 use Log::Log4perl qw(:easy);
-Log::Log4perl->easy_init({ level => $DEBUG, file => ">>_logfile_"});
+Log::Log4perl->easy_init({ level => $DEBUG, file => ">>_logfile_",
+        layout => "%F{1}-%L: %m%n" });
 DEBUG "_type_ trigger starting @ARGV";
 my $c = Cvs::Trigger->new(_cache_);
 my $ret = $c->parse("_type_", _parse_opt_);
@@ -445,6 +463,33 @@ sub files_commit {
 }
 
 ###########################################
+sub single_file_commit {
+###########################################
+    my($self, $content, $file, $message) = @_;
+
+    my $dir = $self->{local_root};
+    cd $dir;
+
+    blurt $content, $file;
+    $self->cvs_cmd("commit", "-m", $message, $file);
+
+    cdback;
+}
+
+###########################################
+sub admin_rebuild {
+###########################################
+    my($self) = @_;
+
+    my $dir = "$self->{local_root}/CVSROOT";
+    cd $dir;
+
+    $self->cvs_cmd("commit", "-m", "admin rebuild", ".");
+
+    cdback;
+}
+
+###########################################
 sub cvs_cmd {
 ###########################################
     my($self, @cmd) = @_;
@@ -458,7 +503,39 @@ sub cvs_cmd {
         LOGDIE "@cmd failed: $stderr";
     }
 
+    if($stderr) {
+        ERROR "cvs cmd warning $stderr";
+    }
+
     DEBUG "@cmd succeeded: $stdout";
+}
+
+
+###########################################
+sub loginfo_line {
+###########################################
+    my($self, $script) = @_;
+
+    # The CVS folks had the glorious idea to change the loginfo format
+    # in 1.12 in a non-backward-compatible way. What were they thinking?
+    if($self->{cvs_version} < 1.12) {
+        return "DEFAULT ((echo %{sVv}; cat) | $script)";
+    }
+
+    return "DEFAULT ((echo %1{sVv}; cat) | $script)";
+}
+
+###########################################
+sub latest_yml {
+###########################################
+    my($self, $index) = @_;
+
+    my $dir = $self->{out_dir};
+    my @ymls = sort { -M $b <=> -M $a } <$dir/trigger.yml.*>;
+
+    $index = -1 unless defined $index;
+
+    return $ymls[$index];
 }
 
 1;
